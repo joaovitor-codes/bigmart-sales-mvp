@@ -93,9 +93,7 @@ Usuário (navegador)
 5. Salve o diagrama em formato `.drawio` e exporte também como `.png`.
 6. No repositório, coloque em `docs/images/architecture.png` e referencie neste arquivo com:
 
-```markdown
 ![Arquitetura](./images/architecture.png)
-```
 
 ---
 
