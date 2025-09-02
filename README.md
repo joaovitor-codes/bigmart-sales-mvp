@@ -28,7 +28,7 @@ No terminal integrado do VS Code (`Ctrl+`):
 
 ```bash
 # Criar ambiente virtual
-python3 -m venv .venv
+python -m venv .venv
 
 # Ativar no Linux/Mac
 source .venv/bin/activate
