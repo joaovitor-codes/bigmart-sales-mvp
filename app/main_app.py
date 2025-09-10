@@ -2,28 +2,18 @@ import streamlit as st
 import pandas as pd
 import os
 import pickle
+import time
 
 # --- Importações do Projeto ---
 from core.data.io import read_csv_smart
-from core.data.database import (
-    create_database_and_tables,
-    insert_csv_to_sor,
-    run_etl_sor_to_sot,
-    run_etl_sot_to_spec_train,
-    run_etl_for_test_data,
-    load_data,
-    drop_database
-)
-from core.features.preprocess import make_preprocess_pipeline
-from core.models.train import train_regressor
-from core.models.predict import evaluate_regressor
-from core.explain.coefficients import extract_linear_importances
+from core.data.database import drop_database
 from core.chatbot.rules import answer_from_metrics
+from core.pipeline import run_training_pipeline, run_prediction_pipeline 
 
 # --- Configurações da Página e Estado ---
 st.set_page_config(page_title="Análise de Vendas", layout="wide")
 
-# (O resto do estado da sessão permanece o mesmo)
+# (O estado da sessão permanece o mesmo)
 if "model_trained" not in st.session_state:
     st.session_state.model_trained = False
 if "predictions_made" not in st.session_state:
@@ -71,24 +61,21 @@ with st.sidebar:
                 df_train = read_csv_smart(file)
         
         if df_train is not None:
-            with st.spinner("Treinando o modelo..."):
-                # (Lógica de treino completa, como antes)
-                create_database_and_tables()
-                insert_csv_to_sor(df_train)
-                run_etl_sor_to_sot()
-                run_etl_sot_to_spec_train()
-                df_spec_train = load_data("spec_bigmart_sales_train")
-                target = "Item_Outlet_Sales"
-                y = df_spec_train[target]
-                X = df_spec_train.drop(columns=[target])
-                pre = make_preprocess_pipeline(X)
-                model, X_test, y_test = train_regressor(X, y, pre, test_size=test_size)
-                with open(MODEL_PATH, "wb") as f:
-                    pickle.dump(model, f)
-                st.session_state.metrics = evaluate_regressor(model, X_test, y_test)
-                st.session_state.importances = extract_linear_importances(model, X.columns, pre)
-                st.session_state.model_trained = True
-                st.session_state.predictions_made = False
+            progress_bar = st.progress(0, text="Iniciando pipeline de treinamento...")
+            
+            # Chama a função orquestradora do pipeline de treino
+            metrics, importances = run_training_pipeline(df_train, test_size, progress_bar, MODEL_PATH)
+            
+            # Salva os resultados na sessão
+            st.session_state.metrics = metrics
+            st.session_state.importances = importances
+            st.session_state.model_trained = True
+            st.session_state.predictions_made = False
+
+            # Finalização
+            progress_bar.progress(100, text="Pipeline concluído!")
+            time.sleep(1)
+            progress_bar.empty()
             st.success("Modelo treinado e salvo com sucesso!")
         else:
             st.warning("Arquivo 'Train.csv' não encontrado.")
@@ -106,22 +93,10 @@ with st.sidebar:
             
             if df_test is not None:
                 with st.spinner("Carregando modelo e fazendo previsões..."):
-                    # Processa os dados de teste
-                    run_etl_for_test_data(df_test)
-                    df_spec_predict = load_data("spec_bigmart_sales_predict")
+                    # Chama a função orquestradora do pipeline de previsão
+                    result_df = run_prediction_pipeline(df_test, MODEL_PATH)
                     
-                    # Carrega o modelo do arquivo .pickle
-                    with open(MODEL_PATH, 'rb') as f:
-                        model = pickle.load(f)
-
-                    # Prepara os dados e faz a previsão
-                    ids = df_spec_predict[['Item_Identifier', 'Outlet_Identifier']]
-                    X_predict = df_spec_predict.drop(columns=['Item_Identifier', 'Outlet_Identifier'])
-                    predictions = model.predict(X_predict)
-                    
-                    # Exibe o resultado
-                    result_df = ids.copy()
-                    result_df['Item_Outlet_Sales'] = predictions
+                    # Salva os resultados na sessão
                     st.session_state.prediction_df = result_df
                     st.session_state.predictions_made = True
                 st.success("Previsões geradas com sucesso usando o modelo salvo!")
@@ -133,13 +108,13 @@ with st.sidebar:
     if st.button("Limpar Tudo"):
         drop_database()
         if os.path.exists(MODEL_PATH):
-            os.remove(MODEL_PATH) # Também remove o modelo salvo
-        st.session_state.clear() # Limpa toda a sessão
+            os.remove(MODEL_PATH)
+        st.session_state.clear()
         st.info("Banco de dados, modelo salvo e sessão resetados.")
         st.rerun()
 
 # --- Abas Principais ---
-# (O código das abas permanece exatamente o mesmo)
+# (O código das abas permanece o mesmo)
 tab_train, tab_predict, tab_chat = st.tabs(["📊 Resultados do Treino", "🚀 Previsões", "💬 Chat com o Modelo"])
 
 with tab_train:
